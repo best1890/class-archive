@@ -6,6 +6,119 @@
 <title>학생기록시스템</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBz8YMNpnAe6RJHX6GK9zKg5Yk8YwXmNho",
+  authDomain: "class-archive-48de4.firebaseapp.com",
+  projectId: "class-archive-48de4",
+  storageBucket: "class-archive-48de4.firebasestorage.app",
+  messagingSenderId: "801776776038",
+  appId: "1:801776776038:web:cd094e85e46ee2858fcea7",
+  measurementId: "G-46Z9ZX33PW"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const provider = new GoogleAuthProvider();
+
+let currentUser = null;
+
+// 구글 로그인
+window.googleLogin = async function() {
+  try {
+    const result = await signInWithPopup(auth, provider);
+    currentUser = result.user;
+  } catch(e) {
+    alert("로그인 실패: " + e.message);
+  }
+};
+
+// 로그아웃
+window.doLogout = async function() {
+  await signOut(auth);
+  document.getElementById('appScreen').style.display='none';
+  document.getElementById('loginScreen').style.display='flex';
+};
+
+// Firestore 저장
+window.saveToStorage = async function() {
+  if(!currentUser) return;
+  try {
+    await setDoc(doc(db, "users", currentUser.uid), {allData, years, currentYear});
+  } catch(e) { console.error(e); }
+};
+
+// Firestore 불러오기
+window.loadFromStorage = async function() {
+  if(!currentUser) return;
+  try {
+    const snap = await getDoc(doc(db, "users", currentUser.uid));
+    if(snap.exists()) {
+      const d = snap.data();
+      window._allData = d.allData || {};
+      window._years = d.years || [];
+      window._currentYear = d.currentYear || "";
+    }
+  } catch(e) { console.error(e); }
+};
+
+// 학급정보 저장
+window.saveClassInfo = async function() {
+  const info = {
+    grade: document.getElementById('ciGrade').value.trim(),
+    cls: document.getElementById('ciClass').value.trim(),
+    teacher: document.getElementById('ciTeacher').value.trim()
+  };
+  if(currentUser) {
+    try { await setDoc(doc(db, "classinfo", currentUser.uid), info); } catch(e){}
+  }
+  const msg = document.getElementById('ciSavedMsg');
+  msg.style.display='inline';
+  setTimeout(()=>msg.style.display='none', 2000);
+};
+
+// 학급정보 불러오기
+window.loadClassInfo = async function() {
+  if(!currentUser) return;
+  try {
+    const snap = await getDoc(doc(db, "classinfo", currentUser.uid));
+    if(snap.exists()) {
+      const d = snap.data();
+      document.getElementById('ciGrade').value = d.grade||'';
+      document.getElementById('ciClass').value = d.cls||'';
+      document.getElementById('ciTeacher').value = d.teacher||'';
+    }
+  } catch(e){}
+};
+
+// 로그인 상태 감지
+onAuthStateChanged(auth, async (user) => {
+  if(user) {
+    currentUser = user;
+    // Firestore에서 데이터 불러오기
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if(snap.exists()) {
+      const d = snap.data();
+      allData = d.allData || {};
+      years = d.years || [];
+      currentYear = d.currentYear || "";
+    }
+    document.getElementById('loginScreen').style.display='none';
+    document.getElementById('appScreen').style.display='block';
+    document.getElementById('userEmail').textContent = user.email;
+    initYears();
+    loadClassInfo();
+    renderRosterList();
+    renderStudentGrid();
+  }
+});
+</script>
 <style>
 :root{
   --bg:#f0f2f5;--surface:#fff;--surface2:#f8fafc;
@@ -632,41 +745,14 @@ function setStudents(a){if(allData[currentYear])allData[currentYear].students=a;
 function setRecords(a) {if(allData[currentYear])allData[currentYear].records =a;}
 
 /* ─────────────────────────────────────
-   localStorage
+   Storage (Firestore - module script에서 처리)
 ───────────────────────────────────── */
-function saveToStorage(){
-  try{localStorage.setItem('hakgupilji_v6',JSON.stringify({allData,years,currentYear}));}catch(e){}
-}
-function loadFromStorage(){
-  try{
-    const raw=localStorage.getItem('hakgupilji_v6');
-    if(raw){const d=JSON.parse(raw);allData=d.allData||{};years=d.years||[];currentYear=d.currentYear||"";}
-  }catch(e){}
-}
+// saveToStorage, loadFromStorage, saveClassInfo, loadClassInfo 는
+// 위 module script에서 window.* 로 정의됨
 
 /* ─────────────────────────────────────
-   학급 정보 저장/불러오기
+   학급 정보 저장/불러오기 (Firestore - module script에서 처리)
 ───────────────────────────────────── */
-function saveClassInfo(){
-  const info={grade:document.getElementById('ciGrade').value.trim(),
-              cls:document.getElementById('ciClass').value.trim(),
-              teacher:document.getElementById('ciTeacher').value.trim()};
-  try{localStorage.setItem('hakgupilji_classinfo',JSON.stringify(info));}catch(e){}
-  const msg=document.getElementById('ciSavedMsg');
-  msg.style.display='inline';
-  setTimeout(()=>msg.style.display='none',2000);
-}
-function loadClassInfo(){
-  try{
-    const raw=localStorage.getItem('hakgupilji_classinfo');
-    if(raw){
-      const d=JSON.parse(raw);
-      document.getElementById('ciGrade').value  =d.grade||'';
-      document.getElementById('ciClass').value  =d.cls||'';
-      document.getElementById('ciTeacher').value=d.teacher||'';
-    }
-  }catch(e){}
-}
 function getClassInfo(){
   const grade  =document.getElementById('ciGrade').value.trim();
   const cls    =document.getElementById('ciClass').value.trim();
@@ -772,19 +858,8 @@ function goHome(){
 }
 
 /* ─────────────────────────────────────
-   로그인
+   로그인 (Firebase Auth - module script에서 처리)
 ───────────────────────────────────── */
-function googleLogin(){loginSuccess("teacher@gmail.com (Google)");}
-function loginSuccess(email){
-  document.getElementById('loginScreen').style.display='none';
-  document.getElementById('appScreen').style.display='block';
-  document.getElementById('userEmail').textContent=email;
-  initYears();loadClassInfo();renderRosterList();renderStudentGrid();
-}
-function doLogout(){
-  document.getElementById('appScreen').style.display='none';
-  document.getElementById('loginScreen').style.display='flex';
-}
 
 /* ─────────────────────────────────────
    다크모드
