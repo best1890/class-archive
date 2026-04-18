@@ -843,10 +843,10 @@ let currentSort="name";
 let studentSearchKeyword="";
 
 function loadFavorites(){
-  try{const raw=localStorage.getItem('hakgupilji_favorites');if(raw)favorites=new Set(JSON.parse(raw));}catch(e){}
+  try{const raw=localStorage.getItem('hakgupilji_favorites_'+window.currentYear);if(raw)favorites=new Set(JSON.parse(raw));else favorites=new Set();}catch(e){favorites=new Set();}
 }
 function saveFavorites(){
-  try{localStorage.setItem('hakgupilji_favorites',JSON.stringify([...favorites]));}catch(e){}
+  try{localStorage.setItem('hakgupilji_favorites_'+window.currentYear,JSON.stringify([...favorites]));}catch(e){}
 }
 function toggleFavorite(name){
   if(favorites.has(name))favorites.delete(name);else favorites.add(name);
@@ -904,6 +904,7 @@ function changeYear(){
   window.currentYear=document.getElementById('yearSelect').value;
   if(!window.allData[window.currentYear])window.allData[window.currentYear]={students:[],records:[],diary:[]};
   if(!window.allData[window.currentYear].diary) window.allData[window.currentYear].diary=[];
+  loadFavorites();
   currentStudent=null; backToList(); saveToStorage();
 }
 function openYearModal(){
