@@ -120,6 +120,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('userEmail').textContent = user.email;
     initYears();
     loadClassInfo();
+    loadApiKeyFromFirestore();
     renderRosterList();
     renderStudentGrid();
     // 뒤로가기 방지를 위한 초기 히스토리 설정
@@ -514,7 +515,7 @@ header{background:var(--primary);color:#fff;padding:12px 16px;display:flex;align
     <div class="tabs">
       <button class="tab-btn active" id="tabBtnRecords" onclick="switchTab('records')">📋 학생 기록</button>
       <button class="tab-btn" id="tabBtnDiary" onclick="switchTab('diary')">✏️ 교단일기</button>
-      <button class="tab-btn" id="tabBtnNaeis" onclick="switchTab('naeis')">📝 행동발달 누가기록</button>
+
     </div>
 
     <!-- ══════ 기록 탭 ══════ -->
@@ -658,50 +659,6 @@ header{background:var(--primary);color:#fff;padding:12px 16px;display:flex;align
 
       <!-- 일기 목록 -->
       <div id="diaryList"></div>
-    </div>
-
-    <!-- ══════ 행동발달 누가기록 탭 ══════ -->
-    <div id="tabNaeis" style="display:none">
-      <div class="section-card">
-        <p class="section-title">📝 행동발달 누가기록 — 나이스 문체 변환</p>
-
-        <!-- 학생 선택 -->
-        <div style="margin-bottom:14px;">
-          <label style="font-size:13px;font-weight:700;color:var(--text2);display:block;margin-bottom:6px;">학생 선택</label>
-          <select id="naeisStudent" onchange="naeisLoadRecords()"
-            style="width:100%;padding:10px 14px;border-radius:8px;border:1.5px solid var(--border2);font-size:14px;font-family:inherit;background:var(--surface);color:var(--text);outline:none;">
-            <option value="">-- 학생을 선택하세요 --</option>
-          </select>
-        </div>
-
-        <!-- 기록 체크박스 목록 -->
-        <div id="naeisRecordList" style="display:none;margin-bottom:14px;">
-          <label style="font-size:13px;font-weight:700;color:var(--text2);display:block;margin-bottom:8px;">변환할 기록 선택</label>
-          <div id="naeisCheckList" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;padding:2px;"></div>
-          <div style="display:flex;gap:8px;margin-top:10px;">
-            <button onclick="naeisSelectAll()" style="padding:7px 13px;border-radius:7px;border:1px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">전체 선택</button>
-            <button onclick="naeisDeselectAll()" style="padding:7px 13px;border-radius:7px;border:1px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">전체 해제</button>
-          </div>
-        </div>
-
-        <!-- 변환 버튼 -->
-        <button id="naeisConvertBtn" onclick="naeisConvert()"
-          style="width:100%;padding:12px;border-radius:8px;background:var(--primary);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;display:none;">
-          ✨ 나이스 문체로 변환
-        </button>
-      </div>
-
-      <!-- 변환 결과 -->
-      <div id="naeisResultArea" style="display:none;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <p style="font-size:14px;font-weight:700;color:var(--primary);">변환 결과 <span style="font-size:12px;color:var(--text3);font-weight:400;">(클릭하여 직접 수정 가능)</span></p>
-          <button onclick="naeisCopyAll()"
-            style="padding:8px 16px;border-radius:8px;background:#16a34a;color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">
-            📋 전체 복사
-          </button>
-        </div>
-        <div id="naeisResultList" style="display:flex;flex-direction:column;gap:12px;"></div>
-      </div>
     </div>
   </div>
 
@@ -1047,12 +1004,9 @@ function switchTab(tab){
   document.getElementById('tabRecords').style.display=tab==='records'?'block':'none';
   document.getElementById('tabRoster').style.display =tab==='roster' ?'block':'none';
   document.getElementById('tabDiary').style.display  =tab==='diary'  ?'block':'none';
-  document.getElementById('tabNaeis').style.display  =tab==='naeis'  ?'block':'none';
   document.getElementById('tabBtnRecords').className ='tab-btn'+(tab==='records'?' active':'');
   document.getElementById('tabBtnDiary').className   ='tab-btn'+(tab==='diary'  ?' active':'');
-  document.getElementById('tabBtnNaeis').className   ='tab-btn'+(tab==='naeis'  ?' active':'');
   if(tab==='diary') renderDiaryList();
-  if(tab==='naeis') naeisInit();
 }
 
 /* ─────────────────────────────────────
@@ -1622,158 +1576,6 @@ function getFileIcon(name){
 function downloadAttach(dataUrl, name){
   const a=document.createElement('a');
   a.href=dataUrl; a.download=name; a.click();
-}
-
-/* ─────────────────────────────────────
-   행동발달 누가기록 (나이스 문체 변환)
-───────────────────────────────────── */
-let naeisSelectedIds = new Set();
-
-function naeisInit(){
-  const sel = document.getElementById('naeisStudent');
-  const students = getStudents();
-  sel.innerHTML = '<option value="">-- 학생을 선택하세요 --</option>' +
-    students.map(s=>`<option value="${s}">${s}</option>`).join('');
-  document.getElementById('naeisRecordList').style.display='none';
-  document.getElementById('naeisConvertBtn').style.display='none';
-  document.getElementById('naeisResultArea').style.display='none';
-  naeisSelectedIds.clear();
-}
-
-function naeisLoadRecords(){
-  const name = document.getElementById('naeisStudent').value;
-  document.getElementById('naeisResultArea').style.display='none';
-  naeisSelectedIds.clear();
-  if(!name){
-    document.getElementById('naeisRecordList').style.display='none';
-    document.getElementById('naeisConvertBtn').style.display='none';
-    return;
-  }
-  const records = getRecords().filter(r=>r.student===name);
-  if(!records.length){
-    document.getElementById('naeisCheckList').innerHTML=
-      '<p style="font-size:13px;color:var(--text3);">이 학생의 기록이 없어요.</p>';
-    document.getElementById('naeisRecordList').style.display='block';
-    document.getElementById('naeisConvertBtn').style.display='none';
-    return;
-  }
-  document.getElementById('naeisCheckList').innerHTML = records.map(r=>`
-    <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);cursor:pointer;">
-      <input type="checkbox" value="${r.id}" onchange="naeisToggle('${r.id}',this.checked)"
-        style="margin-top:3px;width:16px;height:16px;cursor:pointer;flex-shrink:0;">
-      <div style="flex:1;min-width:0;">
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">
-          ${r.category?`<span style="background:${catColors[r.category]||'#6b7280'};color:#fff;font-size:11px;font-weight:600;border-radius:20px;padding:2px 8px;">${r.category}</span>`:''}
-          <span style="font-size:12px;color:var(--text3);">${fmtDateTime(r.incidentDate)}</span>
-        </div>
-        <div style="font-size:13px;color:var(--text2);line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${r.facts}</div>
-      </div>
-    </label>`).join('');
-  document.getElementById('naeisRecordList').style.display='block';
-  document.getElementById('naeisConvertBtn').style.display='block';
-}
-
-function naeisToggle(id, checked){
-  if(checked) naeisSelectedIds.add(id); else naeisSelectedIds.delete(id);
-}
-function naeisSelectAll(){
-  document.querySelectorAll('#naeisCheckList input[type=checkbox]').forEach(cb=>{
-    cb.checked=true; naeisSelectedIds.add(cb.value);
-  });
-}
-function naeisDeselectAll(){
-  document.querySelectorAll('#naeisCheckList input[type=checkbox]').forEach(cb=>{
-    cb.checked=false;
-  });
-  naeisSelectedIds.clear();
-}
-
-async function naeisConvert(){
-  if(!naeisSelectedIds.size){alert('변환할 기록을 선택해주세요.');return;}
-  const name = document.getElementById('naeisStudent').value;
-  const allRecords = getRecords();
-  const selected = [...naeisSelectedIds].map(id=>allRecords.find(r=>r.id===id)).filter(Boolean);
-  const btn = document.getElementById('naeisConvertBtn');
-  btn.textContent='⏳ 변환 중...'; btn.disabled=true;
-
-  const resultList = document.getElementById('naeisResultList');
-  resultList.innerHTML='';
-  document.getElementById('naeisResultArea').style.display='block';
-
-  for(const r of selected){
-    const card = document.createElement('div');
-    card.style.cssText='background:var(--surface);border-radius:10px;padding:16px;box-shadow:var(--shadow);border-left:4px solid '+(catColors[r.category]||'#6b7280')+';';
-    card.innerHTML=`
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
-        <div style="display:flex;gap:6px;align-items:center;">
-          ${r.category?`<span style="background:${catColors[r.category]||'#6b7280'};color:#fff;font-size:11px;font-weight:600;border-radius:20px;padding:2px 8px;">${r.category}</span>`:''}
-          <span style="font-size:12px;color:var(--text3);">${fmtDateTime(r.incidentDate)}</span>
-        </div>
-        <button onclick="naeisCopySingle(this)" style="padding:6px 12px;border-radius:7px;background:var(--primary);color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">📋 복사</button>
-      </div>
-      <div class="naeis-output" contenteditable="true"
-        style="font-size:14px;line-height:1.9;color:var(--text2);outline:none;min-height:60px;white-space:pre-wrap;border:1px dashed transparent;border-radius:6px;padding:4px 6px;transition:border-color .2s;"
-        onfocus="this.style.borderColor='var(--primary)'"
-        onfocusout="this.style.borderColor='transparent'"
-      >변환 중...</div>`;
-    resultList.appendChild(card);
-
-    try{
-      const resp = await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST',
-        headers:{
-          'Content-Type':'application/json',
-          'anthropic-dangerous-direct-browser-access':'true'
-        },
-        body:JSON.stringify({
-          model:'claude-sonnet-4-20250514',
-          max_tokens:1000,
-          messages:[{
-            role:'user',
-            content:`당신은 나이스(NEIS) 행동발달 누가기록 작성 전문가입니다.
-아래 기록을 나이스 행동발달 누가기록 행정 문체로 2문단으로 변환해주세요.
-- 1문단: 관찰된 사실과 행동 특성 서술 (객관적·구체적)
-- 2문단: 교사의 지도 조치 및 향후 방향 서술
-- 문체: 공식 행정 문어체, 3인칭, 과거형
-- 학생명 표기: "${name} 학생"
-- 길이: 각 문단 2~3문장
-
-[사실관계]
-${r.facts}
-
-[교사 조치]
-${r.action}
-${r.contactNote?`\n[학부모 연락]\n${r.contactNote}`:''}
-
-변환 결과만 출력하세요. 번호나 레이블 없이 2문단만.`
-          }]
-        })
-      });
-      const data = await resp.json();
-      const text = (data.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');
-      card.querySelector('.naeis-output').textContent = text || '(변환 실패)';
-    }catch(e){
-      card.querySelector('.naeis-output').textContent = '변환 오류: '+e.message;
-    }
-  }
-  btn.textContent='✨ 나이스 문체로 변환'; btn.disabled=false;
-}
-
-function naeisCopySingle(btn){
-  const text = btn.closest('div').parentElement.querySelector('.naeis-output').innerText;
-  navigator.clipboard.writeText(text).then(()=>{
-    const orig=btn.textContent; btn.textContent='✅ 복사됨!';
-    setTimeout(()=>btn.textContent=orig, 1500);
-  });
-}
-
-function naeisCopyAll(){
-  const outputs=[...document.querySelectorAll('.naeis-output')].map(el=>el.innerText).join('\n\n');
-  navigator.clipboard.writeText(outputs).then(()=>{
-    const btn=document.querySelector('[onclick="naeisCopyAll()"]');
-    const orig=btn.textContent; btn.textContent='✅ 복사됨!';
-    setTimeout(()=>btn.textContent=orig, 1500);
-  });
 }
 
 /* ─────────────────────────────────────
